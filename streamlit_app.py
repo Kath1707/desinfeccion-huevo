@@ -166,10 +166,9 @@ with st.expander("ℹ️ Recordatorio del proceso", expanded=True):
         f"""
         - **Línea:** {CAMPOS_FIJOS['LÍNEA']}
         - **Producto:** {CAMPOS_FIJOS['PRODUCTO']}
-        - **Solución:** hipoclorito de sodio
-        - **Concentración mínima:** > 200 ppm — **tiempo mínimo:** 5 min
-        - Si la concentración es inferior al LC: preparar nuevamente la solución y desinfectar de nuevo.
-        - Si el tiempo fue inferior al LC: enjuagar y desinfectar nuevamente.
+        - **Solución:** Hipoclorito de sodio
+        - **Concentración mínima:** 200 ppm
+        - Si la concentración es inferior al LC: preparar nuevamente la solución y desinfectar de nuevo
         """
     )
 
@@ -188,7 +187,7 @@ if dejar_sin_comentario:
 else:
     accion_correctiva = st.text_area("Comentario de acción correctiva", placeholder="Escribe el comentario...")
 
-ejecutor = st.text_input("Ejecutor (Supervisor de Calidad)", placeholder="Nombre completo")
+ejecutor = st.text_input("Ejecutor", placeholder="Nombre completo")
 
 st.divider()
 
