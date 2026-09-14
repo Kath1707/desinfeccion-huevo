@@ -30,15 +30,15 @@ MARCADOR_PIE = "Se prohíbe la reproducción"     # texto que identifica la fila
 # Valores fijos del registro (se muestran como recordatorio y se guardan tal cual en cada fila).
 # EDITA estos valores si no corresponden exactamente a tu proceso real.
 CAMPOS_FIJOS = {
-    "LÍNEA": "Cocina Dulce",
+    "LÍNEA": "PROCESOS",
     "PRODUCTO": "Huevo",
-    "LAVADO": "Conforme",
-    "DESINFECCIÓN [ ] ppm": "> 200 ppm",
-    "ACCIÓN CORRECTIVA": "-",
     "VºBº JEFE DE CALIDAD": "",
 }
 
 OPCIONES_MINUTOS = ["3 minutos", "4 minutos", "5 minutos", "> 5 minutos"]
+OPCIONES_LAVADO = ["Conforme", "No conforme"]
+OPCIONES_PPM = ["Mayor a 200 ppm", "Menor a 200 ppm"]
+COMENTARIO_VACIO = "Sin comentarios correctivos"
 
 # ──────────────────────────────────────────────────────────────────────────
 # CONEXIÓN A GOOGLE DRIVE / SHEETS
@@ -137,16 +137,16 @@ def encontrar_fila_insercion(worksheet):
     return len(worksheet.get_all_values()) + 1
 
 
-def guardar_registro(worksheet, fecha, minutos, ejecutor):
+def guardar_registro(worksheet, fecha, lavado, ppm, minutos, accion_correctiva, ejecutor):
     fila_insercion = encontrar_fila_insercion(worksheet)
     nueva_fila = [
         fecha.strftime("%d/%m/%Y"),
         CAMPOS_FIJOS["LÍNEA"],
         CAMPOS_FIJOS["PRODUCTO"],
-        CAMPOS_FIJOS["LAVADO"],
-        CAMPOS_FIJOS["DESINFECCIÓN [ ] ppm"],
+        lavado,
+        ppm,
         minutos,
-        CAMPOS_FIJOS["ACCIÓN CORRECTIVA"],
+        accion_correctiva,
         ejecutor,
         CAMPOS_FIJOS["VºBº JEFE DE CALIDAD"],
     ]
@@ -161,14 +161,11 @@ st.set_page_config(page_title="Control Desinfección Huevo", page_icon="🥚", l
 st.title("🥚 Control de Desinfección de Huevo")
 st.caption("MA-FR-033 · Control de procesos · María Almenara")
 
-with st.expander("ℹ️ Recordatorio del proceso (campos fijos del registro)", expanded=True):
+with st.expander("ℹ️ Recordatorio del proceso", expanded=True):
     st.markdown(
         f"""
         - **Línea:** {CAMPOS_FIJOS['LÍNEA']}
         - **Producto:** {CAMPOS_FIJOS['PRODUCTO']}
-        - **Lavado:** {CAMPOS_FIJOS['LAVADO']}
-        - **Desinfección:** {CAMPOS_FIJOS['DESINFECCIÓN [ ] ppm']}
-        - **Acción correctiva estándar:** {CAMPOS_FIJOS['ACCIÓN CORRECTIVA']}
         - **Solución:** hipoclorito de sodio
         - **Concentración mínima:** > 200 ppm — **tiempo mínimo:** 5 min
         - Si la concentración es inferior al LC: preparar nuevamente la solución y desinfectar de nuevo.
@@ -180,7 +177,17 @@ st.divider()
 st.subheader("Nuevo registro")
 
 fecha_seleccionada = st.date_input("Fecha", value=date.today(), format="DD/MM/YYYY")
+lavado = st.selectbox("Lavado", options=OPCIONES_LAVADO)
+ppm = st.selectbox("Desinfección [ ] ppm", options=OPCIONES_PPM)
 minutos = st.selectbox("Tiempo de desinfección (min)", options=OPCIONES_MINUTOS)
+
+dejar_sin_comentario = st.checkbox("Dejar acción correctiva vacía", value=True)
+if dejar_sin_comentario:
+    accion_correctiva = COMENTARIO_VACIO
+    st.caption(f"Se guardará como: “{COMENTARIO_VACIO}”")
+else:
+    accion_correctiva = st.text_area("Comentario de acción correctiva", placeholder="Escribe el comentario...")
+
 ejecutor = st.text_input("Ejecutor (Supervisor de Calidad)", placeholder="Nombre completo")
 
 st.divider()
@@ -188,7 +195,10 @@ st.divider()
 if st.button("💾 Guardar registro", type="primary", use_container_width=True):
     if not ejecutor.strip():
         st.error("Por favor ingresa el nombre del ejecutor antes de guardar.")
+    elif not dejar_sin_comentario and not accion_correctiva.strip():
+        st.error("Escribe un comentario de acción correctiva o marca la casilla para dejarlo vacío.")
     else:
+        accion_final = accion_correctiva if dejar_sin_comentario else accion_correctiva.strip()
         try:
             with st.spinner("Guardando en Google Sheets..."):
                 gc = conectar_gspread()
@@ -197,7 +207,9 @@ if st.button("💾 Guardar registro", type="primary", use_container_width=True):
                 nombre_ss = nombre_spreadsheet_mensual(fecha_seleccionada)
                 spreadsheet = obtener_spreadsheet_mensual(gc, carpeta_id, nombre_ss)
                 worksheet = obtener_o_crear_hoja_del_dia(spreadsheet, fecha_seleccionada)
-                guardar_registro(worksheet, fecha_seleccionada, minutos, ejecutor.strip())
+                guardar_registro(
+                    worksheet, fecha_seleccionada, lavado, ppm, minutos, accion_final, ejecutor.strip()
+                )
             st.success(
                 f"✅ Registro guardado correctamente en '{nombre_ss}' → "
                 f"hoja '{fecha_seleccionada.strftime('%Y-%m-%d')}'."
