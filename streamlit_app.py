@@ -32,7 +32,7 @@ MARCADOR_PIE = "Se prohíbe la reproducción"     # texto que identifica la fila
 CAMPOS_FIJOS = {
     "LÍNEA": "PROCESOS",
     "PRODUCTO": "Huevo",
-    "VºBº JEFE DE CALIDAD": "",
+    "VºBº JEFE DE CALIDAD": "V. IRIARTE",
 }
 
 OPCIONES_MINUTOS = ["3 minutos", "4 minutos", "5 minutos", "> 5 minutos"]
@@ -123,22 +123,42 @@ def obtener_o_crear_hoja_del_dia(spreadsheet, fecha: date):
         return nueva
 
 
-def encontrar_fila_insercion(worksheet):
+def encontrar_fila_destino(worksheet):
     """
-    Encuentra la fila justo antes del pie de página (MARCADOR_PIE) para insertar
-    el nuevo registro arriba de él, igual que en las apps PT / PI / Cocina Dulce.
-    Si no encuentra el marcador, inserta después de la última fila con datos.
+    Los registros deben llenarse en orden, empezando justo debajo del encabezado
+    (fila FILA_ENCABEZADO + 1 = fila 5), sin pisar nunca la fila del pie de
+    página (firma / texto legal).
+
+    Devuelve (fila, necesita_insertar):
+    - Si hay una fila vacía disponible antes del pie de página, se reutiliza esa
+      fila (necesita_insertar=False) para no ir generando filas en blanco.
+    - Si ya no queda espacio libre antes del pie, se inserta una fila nueva
+      justo encima de él (necesita_insertar=True), empujando el pie hacia abajo.
     """
     valores_col_a = worksheet.col_values(1)
+
+    # Fila del marcador de pie de página (si existe)
+    fila_pie = None
     for idx, valor in enumerate(valores_col_a, start=1):
         if MARCADOR_PIE in (valor or ""):
-            return idx
-    # Fallback: al final de la hoja
-    return len(worksheet.get_all_values()) + 1
+            fila_pie = idx
+            break
+
+    limite = fila_pie if fila_pie else (len(valores_col_a) + 1)
+
+    for idx in range(FILA_ENCABEZADO + 1, limite):
+        valor = valores_col_a[idx - 1] if idx - 1 < len(valores_col_a) else ""
+        if not (valor or "").strip():
+            return idx, False
+
+    if fila_pie:
+        return fila_pie, True
+
+    return limite, False
 
 
 def guardar_registro(worksheet, fecha, lavado, ppm, minutos, accion_correctiva, ejecutor):
-    fila_insercion = encontrar_fila_insercion(worksheet)
+    fila_destino, necesita_insertar = encontrar_fila_destino(worksheet)
     nueva_fila = [
         fecha.strftime("%d/%m/%Y"),
         CAMPOS_FIJOS["LÍNEA"],
@@ -150,7 +170,12 @@ def guardar_registro(worksheet, fecha, lavado, ppm, minutos, accion_correctiva, 
         ejecutor,
         CAMPOS_FIJOS["VºBº JEFE DE CALIDAD"],
     ]
-    worksheet.insert_row(nueva_fila, index=fila_insercion, value_input_option="USER_ENTERED")
+    if necesita_insertar:
+        worksheet.insert_row(nueva_fila, index=fila_destino, value_input_option="USER_ENTERED")
+    else:
+        worksheet.update(
+            f"A{fila_destino}:I{fila_destino}", [nueva_fila], value_input_option="USER_ENTERED"
+        )
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -166,9 +191,10 @@ with st.expander("ℹ️ Recordatorio del proceso", expanded=True):
         f"""
         - **Línea:** {CAMPOS_FIJOS['LÍNEA']}
         - **Producto:** {CAMPOS_FIJOS['PRODUCTO']}
-        - **Solución:** Hipoclorito de sodio
-        - **Concentración mínima:** 200 ppm
-        - Si la concentración es inferior al LC: preparar nuevamente la solución y desinfectar de nuevo
+        - **Solución:** hipoclorito de sodio
+        - **Concentración mínima:** > 200 ppm
+        - Si la concentración es inferior al LC: preparar nuevamente la solución y desinfectar de nuevo.
+  
         """
     )
 
