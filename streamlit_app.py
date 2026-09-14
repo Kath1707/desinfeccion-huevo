@@ -192,55 +192,76 @@ with st.expander("ℹ️ Recordatorio del proceso", expanded=True):
         - **Línea:** {CAMPOS_FIJOS['LÍNEA']}
         - **Producto:** {CAMPOS_FIJOS['PRODUCTO']}
         - **Solución:** hipoclorito de sodio
-        - **Concentración mínima:** > 200 ppm
+        - **Concentración mínima:** > 200 ppm — **tiempo mínimo:** 5 min
         - Si la concentración es inferior al LC: preparar nuevamente la solución y desinfectar de nuevo.
-  
+        - Si el tiempo fue inferior al LC: enjuagar y desinfectar nuevamente.
         """
     )
 
 st.divider()
 st.subheader("Nuevo registro")
 
-fecha_seleccionada = st.date_input("Fecha", value=date.today(), format="DD/MM/YYYY")
-lavado = st.selectbox("Lavado", options=OPCIONES_LAVADO)
-ppm = st.selectbox("Desinfección [ ] ppm", options=OPCIONES_PPM)
-minutos = st.selectbox("Tiempo de desinfección (min)", options=OPCIONES_MINUTOS)
+if "form_key" not in st.session_state:
+    st.session_state.form_key = 0
+if "guardado_ok" not in st.session_state:
+    st.session_state.guardado_ok = False
 
-dejar_sin_comentario = st.checkbox("Dejar acción correctiva vacía", value=True)
+k = st.session_state.form_key  # sufijo de las keys, cambia al pulsar "Nuevo registro"
+
+fecha_seleccionada = st.date_input("Fecha", value=date.today(), format="DD/MM/YYYY", key=f"fecha_{k}")
+lavado = st.selectbox("Lavado", options=OPCIONES_LAVADO, key=f"lavado_{k}")
+ppm = st.selectbox("Desinfección [ ] ppm", options=OPCIONES_PPM, key=f"ppm_{k}")
+minutos = st.selectbox("Tiempo de desinfección (min)", options=OPCIONES_MINUTOS, key=f"minutos_{k}")
+
+dejar_sin_comentario = st.checkbox("Dejar acción correctiva vacía", value=True, key=f"sin_comentario_{k}")
 if dejar_sin_comentario:
     accion_correctiva = COMENTARIO_VACIO
     st.caption(f"Se guardará como: “{COMENTARIO_VACIO}”")
 else:
-    accion_correctiva = st.text_area("Comentario de acción correctiva", placeholder="Escribe el comentario...")
+    accion_correctiva = st.text_area(
+        "Comentario de acción correctiva", placeholder="Escribe el comentario...", key=f"accion_{k}"
+    )
 
-ejecutor = st.text_input("Ejecutor", placeholder="Nombre completo")
+ejecutor = st.text_input("Ejecutor (Supervisor de Calidad)", placeholder="Nombre completo", key=f"ejecutor_{k}")
 
 st.divider()
 
-if st.button("💾 Guardar registro", type="primary", use_container_width=True):
-    if not ejecutor.strip():
-        st.error("Por favor ingresa el nombre del ejecutor antes de guardar.")
-    elif not dejar_sin_comentario and not accion_correctiva.strip():
-        st.error("Escribe un comentario de acción correctiva o marca la casilla para dejarlo vacío.")
-    else:
-        accion_final = accion_correctiva if dejar_sin_comentario else accion_correctiva.strip()
-        try:
-            with st.spinner("Guardando en Google Sheets..."):
-                gc = conectar_gspread()
-                root_folder_id = st.secrets["ROOT_FOLDER_ID"]
-                carpeta_id = obtener_carpeta_id(gc, CARPETA_NOMBRE, root_folder_id)
-                nombre_ss = nombre_spreadsheet_mensual(fecha_seleccionada)
-                spreadsheet = obtener_spreadsheet_mensual(gc, carpeta_id, nombre_ss)
-                worksheet = obtener_o_crear_hoja_del_dia(spreadsheet, fecha_seleccionada)
-                guardar_registro(
-                    worksheet, fecha_seleccionada, lavado, ppm, minutos, accion_final, ejecutor.strip()
+col_guardar, col_nuevo = st.columns(2)
+
+with col_guardar:
+    if st.button("💾 Guardar registro", type="primary", use_container_width=True):
+        if not ejecutor.strip():
+            st.error("Por favor ingresa el nombre del ejecutor antes de guardar.")
+        elif not dejar_sin_comentario and not accion_correctiva.strip():
+            st.error("Escribe un comentario de acción correctiva o marca la casilla para dejarlo vacío.")
+        else:
+            accion_final = accion_correctiva if dejar_sin_comentario else accion_correctiva.strip()
+            try:
+                with st.spinner("Guardando en Google Sheets..."):
+                    gc = conectar_gspread()
+                    root_folder_id = st.secrets["ROOT_FOLDER_ID"]
+                    carpeta_id = obtener_carpeta_id(gc, CARPETA_NOMBRE, root_folder_id)
+                    nombre_ss = nombre_spreadsheet_mensual(fecha_seleccionada)
+                    spreadsheet = obtener_spreadsheet_mensual(gc, carpeta_id, nombre_ss)
+                    worksheet = obtener_o_crear_hoja_del_dia(spreadsheet, fecha_seleccionada)
+                    guardar_registro(
+                        worksheet, fecha_seleccionada, lavado, ppm, minutos, accion_final, ejecutor.strip()
+                    )
+                st.session_state.guardado_ok = True
+                st.success(
+                    f"✅ Registro guardado correctamente en '{nombre_ss}' → "
+                    f"hoja '{fecha_seleccionada.strftime('%Y-%m-%d')}'."
                 )
-            st.success(
-                f"✅ Registro guardado correctamente en '{nombre_ss}' → "
-                f"hoja '{fecha_seleccionada.strftime('%Y-%m-%d')}'."
-            )
-            st.balloons()
-        except FileNotFoundError as e:
-            st.error(str(e))
-        except Exception as e:
-            st.error(f"Ocurrió un error al guardar: {e}")
+                st.balloons()
+            except FileNotFoundError as e:
+                st.session_state.guardado_ok = False
+                st.error(str(e))
+            except Exception as e:
+                st.session_state.guardado_ok = False
+                st.error(f"Ocurrió un error al guardar: {e}")
+
+with col_nuevo:
+    if st.button("➕ Nuevo registro", use_container_width=True):
+        st.session_state.form_key += 1
+        st.session_state.guardado_ok = False
+        st.rerun()
