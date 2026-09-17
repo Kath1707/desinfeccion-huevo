@@ -25,7 +25,8 @@ from datetime import date
 CARPETA_NOMBRE = "Desinfeccion huevo"          # subcarpeta dentro de ROOT_FOLDER_ID
 HOJA_PLANTILLA = "Hoja 1"                       # nombre de la hoja plantilla dentro de cada spreadsheet mensual
 FILA_ENCABEZADO = 4                             # fila donde están los títulos de columna (A4:I4)
-MARCADOR_PIE = "Se prohíbe la reproducción"     # texto que identifica la fila de pie de página (no tocar)
+MARCADOR_FIRMA = "JEFE DE CALIDAD"              # texto de la leyenda que está justo DEBAJO de la imagen de firma
+                                                 # (la imagen de la firma ocupa la fila inmediatamente anterior a este texto; no tocar)
 
 # Valores fijos del registro (se muestran como recordatorio y se guardan tal cual en cada fila).
 # EDITA estos valores si no corresponden exactamente a tu proceso real.
@@ -123,42 +124,29 @@ def obtener_o_crear_hoja_del_dia(spreadsheet, fecha: date):
         return nueva
 
 
-def encontrar_fila_destino(worksheet):
+def encontrar_fila_firma(worksheet):
     """
-    Los registros deben llenarse en orden, empezando justo debajo del encabezado
-    (fila FILA_ENCABEZADO + 1 = fila 5), sin pisar nunca la fila del pie de
-    página (firma / texto legal).
+    Ubica la fila de la IMAGEN de firma: es la fila inmediatamente anterior a la
+    leyenda "VºB JEFE DE CALIDAD" (MARCADOR_FIRMA), buscando solo debajo del
+    encabezado para no confundirla con la columna I del encabezado (fila 4).
 
-    Devuelve (fila, necesita_insertar):
-    - Si hay una fila vacía disponible antes del pie de página, se reutiliza esa
-      fila (necesita_insertar=False) para no ir generando filas en blanco.
-    - Si ya no queda espacio libre antes del pie, se inserta una fila nueva
-      justo encima de él (necesita_insertar=True), empujando el pie hacia abajo.
+    Insertar SIEMPRE una fila nueva justo en esta posición (en vez de sobrescribir
+    filas vacías) empuja la imagen y todo lo que está debajo un lugar hacia abajo,
+    sin tocarla ni desordenar nada — así nunca se pisa ni se borra la firma.
     """
     valores_col_a = worksheet.col_values(1)
-
-    # Fila del marcador de pie de página (si existe)
-    fila_pie = None
-    for idx, valor in enumerate(valores_col_a, start=1):
-        if MARCADOR_PIE in (valor or ""):
-            fila_pie = idx
-            break
-
-    limite = fila_pie if fila_pie else (len(valores_col_a) + 1)
-
-    for idx in range(FILA_ENCABEZADO + 1, limite):
+    for idx in range(FILA_ENCABEZADO + 1, len(valores_col_a) + 1):
         valor = valores_col_a[idx - 1] if idx - 1 < len(valores_col_a) else ""
-        if not (valor or "").strip():
-            return idx, False
-
-    if fila_pie:
-        return fila_pie, True
-
-    return limite, False
+        if MARCADOR_FIRMA in (valor or ""):
+            return idx - 1  # la fila de la imagen está una posición arriba de la leyenda
+    raise ValueError(
+        f"No se encontró la leyenda '{MARCADOR_FIRMA}' en la hoja. "
+        "Verifica que la plantilla no haya cambiado de estructura."
+    )
 
 
 def guardar_registro(worksheet, fecha, lavado, ppm, minutos, accion_correctiva, ejecutor):
-    fila_destino, necesita_insertar = encontrar_fila_destino(worksheet)
+    fila_destino = encontrar_fila_firma(worksheet)
     nueva_fila = [
         fecha.strftime("%d/%m/%Y"),
         CAMPOS_FIJOS["LÍNEA"],
@@ -170,12 +158,9 @@ def guardar_registro(worksheet, fecha, lavado, ppm, minutos, accion_correctiva, 
         ejecutor,
         CAMPOS_FIJOS["VºBº JEFE DE CALIDAD"],
     ]
-    if necesita_insertar:
-        worksheet.insert_row(nueva_fila, index=fila_destino, value_input_option="USER_ENTERED")
-    else:
-        worksheet.update(
-            f"A{fila_destino}:I{fila_destino}", [nueva_fila], value_input_option="USER_ENTERED"
-        )
+    # Siempre se INSERTA (nunca se sobrescribe) justo encima de la fila de la firma,
+    # empujando la imagen y la leyenda un lugar hacia abajo en cada registro.
+    worksheet.insert_row(nueva_fila, index=fila_destino, value_input_option="USER_ENTERED")
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -191,9 +176,10 @@ with st.expander("ℹ️ Recordatorio del proceso", expanded=True):
         f"""
         - **Línea:** {CAMPOS_FIJOS['LÍNEA']}
         - **Producto:** {CAMPOS_FIJOS['PRODUCTO']}
-        - **Solución:** Hipoclorito de sodio
-        - **Concentración mínima:** 200 ppm 
+        - **Solución:** hipoclorito de sodio
+        - **Concentración mínima:** > 200 ppm — **tiempo mínimo:** 5 min
         - Si la concentración es inferior al LC: preparar nuevamente la solución y desinfectar de nuevo.
+        - Si el tiempo fue inferior al LC: enjuagar y desinfectar nuevamente.
         """
     )
 
@@ -221,7 +207,7 @@ else:
         "Comentario de acción correctiva", placeholder="Escribe el comentario...", key=f"accion_{k}"
     )
 
-ejecutor = st.text_input("Ejecutor", placeholder="Nombre completo", key=f"ejecutor_{k}")
+ejecutor = st.text_input("Ejecutor (Supervisor de Calidad)", placeholder="Nombre completo", key=f"ejecutor_{k}")
 
 st.divider()
 
