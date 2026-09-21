@@ -9,9 +9,13 @@ siguiendo el mismo patrón de las apps PT / PI / Cocina Dulce:
 - Cada FECHA crea/usa una hoja (tab) distinta dentro del spreadsheet mensual,
   duplicando la plantilla "Hoja 1" la primera vez que se usa esa fecha.
 
-Campos editables por el usuario: FECHA, TIEMPO (min), EJECUTOR.
-Los demás campos del formato quedan FIJOS (constantes abajo) pero se muestran
-en pantalla como recordatorio antes de guardar.
+Columnas del registro (en este orden):
+FECHA | LÍNEA | PRODUCTO | LAVADO | DESINFECCIÓN [ ] ppm | TIEMPO (min) |
+ACCIÓN CORRECTIVA | EJECUTOR | SUPERVISOR CALIDAD | PRODUCTO STBX A TRABAJAR |
+VºBº JEFE DE CALIDAD
+
+Cada registro nuevo se INSERTA (nunca se sobrescribe) justo encima de la fila
+donde está la imagen de la firma del Jefe de Calidad, para no pisarla nunca.
 """
 
 import streamlit as st
@@ -24,7 +28,7 @@ from datetime import date
 # ──────────────────────────────────────────────────────────────────────────
 CARPETA_NOMBRE = "Desinfeccion huevo"          # subcarpeta dentro de ROOT_FOLDER_ID
 HOJA_PLANTILLA = "Hoja 1"                       # nombre de la hoja plantilla dentro de cada spreadsheet mensual
-FILA_ENCABEZADO = 4                             # fila donde están los títulos de columna (A4:I4)
+FILA_ENCABEZADO = 4                             # fila donde están los títulos de columna (A4:K4)
 MARCADOR_FIRMA = "JEFE DE CALIDAD"              # texto de la leyenda que está justo DEBAJO de la imagen de firma
                                                  # (la imagen de la firma ocupa la fila inmediatamente anterior a este texto; no tocar)
 
@@ -128,7 +132,7 @@ def encontrar_fila_firma(worksheet):
     """
     Ubica la fila de la IMAGEN de firma: es la fila inmediatamente anterior a la
     leyenda "VºB JEFE DE CALIDAD" (MARCADOR_FIRMA), buscando solo debajo del
-    encabezado para no confundirla con la columna I del encabezado (fila 4).
+    encabezado para no confundirla con la columna del encabezado (fila 4).
 
     Insertar SIEMPRE una fila nueva justo en esta posición (en vez de sobrescribir
     filas vacías) empuja la imagen y todo lo que está debajo un lugar hacia abajo,
@@ -145,7 +149,10 @@ def encontrar_fila_firma(worksheet):
     )
 
 
-def guardar_registro(worksheet, fecha, lavado, ppm, minutos, accion_correctiva, ejecutor):
+def guardar_registro(
+    worksheet, fecha, lavado, ppm, minutos, accion_correctiva,
+    ejecutor, supervisor_calidad, producto_stbx,
+):
     fila_destino = encontrar_fila_firma(worksheet)
     nueva_fila = [
         fecha.strftime("%d/%m/%Y"),
@@ -156,6 +163,8 @@ def guardar_registro(worksheet, fecha, lavado, ppm, minutos, accion_correctiva, 
         minutos,
         accion_correctiva,
         ejecutor,
+        supervisor_calidad,
+        producto_stbx,
         CAMPOS_FIJOS["VºBº JEFE DE CALIDAD"],
     ]
     # Siempre se INSERTA (nunca se sobrescribe) justo encima de la fila de la firma,
@@ -208,6 +217,12 @@ else:
     )
 
 ejecutor = st.text_input("Ejecutor (Supervisor de Calidad)", placeholder="Nombre completo", key=f"ejecutor_{k}")
+supervisor_calidad = st.text_input(
+    "Supervisor Calidad que registró", placeholder="Nombre completo", key=f"supervisor_calidad_{k}"
+)
+producto_stbx = st.text_input(
+    "Producto STBX a trabajar", placeholder="Producto para el que se usarán estos huevos", key=f"producto_stbx_{k}"
+)
 
 st.divider()
 
@@ -217,6 +232,10 @@ with col_guardar:
     if st.button("💾 Guardar registro", type="primary", use_container_width=True):
         if not ejecutor.strip():
             st.error("Por favor ingresa el nombre del ejecutor antes de guardar.")
+        elif not supervisor_calidad.strip():
+            st.error("Por favor ingresa el nombre del Supervisor de Calidad antes de guardar.")
+        elif not producto_stbx.strip():
+            st.error("Por favor ingresa el producto STBX a trabajar antes de guardar.")
         elif not dejar_sin_comentario and not accion_correctiva.strip():
             st.error("Escribe un comentario de acción correctiva o marca la casilla para dejarlo vacío.")
         else:
@@ -230,7 +249,8 @@ with col_guardar:
                     spreadsheet = obtener_spreadsheet_mensual(gc, carpeta_id, nombre_ss)
                     worksheet = obtener_o_crear_hoja_del_dia(spreadsheet, fecha_seleccionada)
                     guardar_registro(
-                        worksheet, fecha_seleccionada, lavado, ppm, minutos, accion_final, ejecutor.strip()
+                        worksheet, fecha_seleccionada, lavado, ppm, minutos, accion_final,
+                        ejecutor.strip(), supervisor_calidad.strip(), producto_stbx.strip(),
                     )
                 st.session_state.guardado_ok = True
                 st.success(
